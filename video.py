@@ -46,10 +46,10 @@ def verify_video(path, seconds, fps, log):
         raise ValueError(f'invalid video duration: {path}')
     run(['ffmpeg', '-v', 'error', '-xerror', '-i', str(path), '-map', '0:v:0', '-f', 'null', '-'], log)
 
-def fingerprint(plan, song, vocals, preview):
+def fingerprint(plan, song, vocals, preview, soundtrack=None):
     digest = hashlib.sha256()
     digest.update(json.dumps({'plan': plan, 'preview': preview}, sort_keys=True).encode())
-    for path in [ROOT / 'video.py', ROOT / 'audio.py', ROOT / 'blender_scene.py', song] + ([vocals] if vocals else []):
+    for path in [ROOT / 'video.py', ROOT / 'audio.py', ROOT / 'blender_scene.py', song] + ([vocals] if vocals else []) + ([soundtrack] if soundtrack else []):
         digest.update(Path(path).read_bytes())
     return digest.hexdigest()
 
@@ -67,7 +67,7 @@ def doctor(args):
         if not configs:
             missing.append('voicebank files')
     else:
-        print('Voicebank: not supplied. Singing requires an installed English singer.')
+        print('Voicebank: not supplied. OpenUtau needs an English singer; ACE-Step uses the separate song.py path.')
     print('Phonemizer: ' + (args.phonemizer or 'not supplied; select the one required by the singer in OpenUtau'))
     print('Renderer: select the renderer required by the singer in OpenUtau (WORLDLINE-R or DiffSinger, for example).')
     print('File presence does not verify a voicebank license, phonemizer compatibility, or audible output.')
@@ -84,9 +84,15 @@ def create(args):
     for name in (args.blender, 'ffmpeg', 'ffprobe'):
         if not shutil.which(name):
             raise ValueError(f'{name} is missing. Run: python3 video.py doctor')
-    if not args.preview and not args.vocals and not args.instrumental:
-        raise ValueError('supply --vocals vocals.wav, or explicitly choose --instrumental; singing is not generated automatically')
-    job_key = fingerprint(plan, Path(args.song), Path(args.vocals) if args.vocals else None, args.preview)
+    soundtrack_input = getattr(args, 'soundtrack', None)
+    if soundtrack_input and (args.vocals or args.instrumental):
+        raise ValueError('--soundtrack is a complete song; do not combine it with --vocals or --instrumental')
+    if soundtrack_input:
+        import song as song_client
+        song_client.validate_audio(soundtrack_input, total)
+    if not args.preview and not args.vocals and not args.instrumental and not soundtrack_input:
+        raise ValueError('supply --soundtrack song.wav, --vocals vocals.wav, or explicitly choose --instrumental')
+    job_key = fingerprint(plan, Path(args.song), Path(args.vocals) if args.vocals else None, args.preview, soundtrack_input)
     folder = Path(args.out).resolve() / ('preview' if args.preview else 'full') / job_key[:16]
     folder.mkdir(parents=True, exist_ok=True)
     lock = folder / '.running'
@@ -97,13 +103,15 @@ def create(args):
     os.close(descriptor)
     manifest_path = folder / 'status.json'
     try:
-        manifest = {'fingerprint': job_key, 'status': 'running', 'scenes': [], 'vocals': bool(args.vocals)}
+        manifest = {'fingerprint': job_key, 'status': 'running', 'scenes': [], 'vocals': bool(args.vocals), 'soundtrack': bool(soundtrack_input)}
         manifest_path.write_text(json.dumps(manifest, indent=2))
         audio.prepare(args.song, folder)
         soundtrack = folder / 'backing.wav'
         if args.vocals:
             audio.mix(args.vocals, soundtrack, folder / 'song.wav')
             soundtrack = folder / 'song.wav'
+        if soundtrack_input:
+            soundtrack = Path(soundtrack_input).resolve()
         fps, width, height, samples = (12, 256, 456, 4) if args.preview else (24, 540, 960, 8)
         scenes = [dict(plan['scenes'][0], seconds=min(2, plan['scenes'][0]['seconds']))] if args.preview else plan['scenes']
         durations = [round(s['seconds'] * fps) / fps for s in scenes]
@@ -151,7 +159,7 @@ def create(args):
         manifest.update(status='verified_media_needs_human_review', output=str(destination),
                         seconds=sum(durations), finished=time.time())
         manifest_path.write_text(json.dumps(manifest, indent=2))
-        print(f'Created: {destination}\nAudio: {"imported vocals" if args.vocals else "instrumental only, no singing"}. Review animation and sound before publishing.')
+        print(f'Created: {destination}\nAudio: {"imported complete song; vocals unverified" if soundtrack_input else "imported vocals" if args.vocals else "instrumental only, no singing"}. Review animation and sound before publishing.')
     except BaseException as exc:
         if 'manifest' in locals():
             manifest.update(status='interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed', error=str(exc))
@@ -172,6 +180,7 @@ def main():
     new.add_argument('--song', default=str(ROOT / 'examples/happy_feet.json'))
     new.add_argument('--out', default='output/video')
     new.add_argument('--vocals')
+    new.add_argument('--soundtrack', help='Complete song with music; bypasses procedural backing and vocal mixing')
     new.add_argument('--instrumental', action='store_true')
     new.add_argument('--preview', action='store_true')
     new.add_argument('--blender', default='blender')
