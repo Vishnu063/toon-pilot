@@ -50,7 +50,11 @@ for i in range(1,config['frames']+1):
     if count==1: sys.exit(7)
 ''')
             launcher.chmod(0o755)
-            args=argparse.Namespace(plan=str(video.ROOT/'examples/video.json'),song=str(video.ROOT/'examples/happy_feet.json'),
+            plan=root/'captions.json'
+            data=json.loads((video.ROOT/'examples/video.json').read_text())
+            data['scenes'][0]['caption']='Hello, friends!'
+            plan.write_text(json.dumps(data))
+            args=argparse.Namespace(plan=str(plan),song=str(video.ROOT/'examples/happy_feet.json'),
                 out=str(root/'output'), preview=True, vocals=None, instrumental=False, blender=str(launcher), threads=1)
             with contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaises(RuntimeError):
@@ -60,7 +64,7 @@ for i in range(1,config['frames']+1):
                 self.assertFalse(list((root/'output').rglob('.running')))
                 video.create(args)
                 output=list((root/'output').rglob('preview.mp4'))[0]
-                self.assertEqual({s['codec_type'] for s in video.probe(output)['streams']}, {'video','audio'})
+                self.assertEqual({s['codec_type'] for s in video.probe(output)['streams']}, {'video','audio','subtitle'})
                 self.assertAlmostEqual(float(video.probe(output)['format']['duration']),2,delta=.15)
                 video.create(args)
                 self.assertTrue(json.loads(statuses[0].read_text())['scenes'][0]['reused'])

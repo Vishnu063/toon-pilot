@@ -69,7 +69,7 @@ Edit `examples/happy_feet.json`: `bpm`, and each note's `lyric`, MIDI `pitch` (6
 python3 -m unittest discover -s tests -v
 ```
 
-Eleven local tests cover audio validation and mixing, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
+Fifteen local tests cover audio validation and mixing, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
 
 
 ## Create a video
@@ -122,7 +122,7 @@ If frame decoding fails repeatedly, delete the affected generated PNG and retry.
 
 ### Validation performed for this update
 
-- Eleven automated tests passed locally, including real FFmpeg encoding/assembly/decoding with fixture frames and a failed job followed by resume and clip reuse.
+- Fifteen automated tests passed locally, including real FFmpeg encoding/assembly/decoding with fixture frames and a failed job followed by resume and clip reuse.
 - Blender 4.2.0 rendered an actual two-second, 24-frame CPU preview with the included characters. FFprobe and full video decoding passed; a rendered frame was visually inspected.
 - Each of the four action/camera pairs rendered two small smoke-test frames in real Blender.
 - No full 32-second render, actual English voicebank singing, target-machine 8 GB memory benchmark, or end-to-end sung video has been completed. The two-second preview contains instrumental backing only.
@@ -149,3 +149,15 @@ python3 video.py create --soundtrack output/music/happy_feet.wav
 Stop the ACE-Step server after generating audio, before starting Blender on an 8 GB machine. `--soundtrack` bypasses vocal mixing and preserves stereo audio; `--vocals` remains for isolated mono vocals from OpenUtau. No automatic lyric-to-action alignment is provided.
 
 The adapter saves a task ID and resumes polling on repeat runs, checks server failures, downloads only from the selected loopback server, and validates audio decoding/duration before saving a completed output. Client timeouts do not cancel server work. The tests used a local fixture server and synthetic audio, not a singing model. An imported stereo 48 kHz soundtrack was tested through real FFmpeg assembly. No actual ACE-Step song has been generated or listened to in this workspace.
+
+
+## YAML stories, rigged character clips and captions
+
+A focused [anim-studio adaptation](docs/scenes.md) adds optional YAML scenes, named cast/model entries, embedded skeletal clips, a sidecar SRT and selectable MP4 captions. Its small reused rig helper retains the upstream MIT license in `third_party/anim_studio/`. This is a smaller Toon Pilot schema, not a drop-in importer for all upstream story files. No upstream voices, assets, MCP service or branded end card are bundled.
+
+```bash
+python3 -m pip install -r requirements-scenes.txt
+python3 video.py create --plan examples/happy_feet.scene.yaml --preview
+```
+
+The included YAML works with our procedural characters. Your own licensed, self-contained GLB/FBX with one armature and embedded animation can replace them through `cast` and per-scene `characters`; see [the scene guide](docs/scenes.md). Separate motion-file retargeting and automatic lip sync are not implemented. Imported asset memory use depends on mesh/texture size. Captions are selectable, not burned in, and their text/timing must be reviewed against the actual song.

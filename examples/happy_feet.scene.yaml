@@ -1,0 +1,19 @@
+title: Milo and Pip — Happy Feet
+# Our scene format; uses the existing procedural characters when characters is omitted.
+scenes:
+  - seconds: 8
+    action: waddle
+    camera: dolly
+    caption: Little duck with happy feet
+  - seconds: 8
+    action: hop
+    camera: arc
+    caption: Bunny hops along to play
+  - seconds: 8
+    action: dance
+    camera: static
+    caption: Do a little dance with me!
+  - seconds: 8
+    action: wave
+    camera: pullback
+    caption: Bye-bye, friends!

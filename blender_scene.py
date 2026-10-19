@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 import bpy
 from mathutils import Vector
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from third_party.anim_studio.rig import find_armature, bind_action, shift_action_to_frame1, curves
 
 COLORS = {'yellow': (1, .69, .08, 1), 'orange': (1, .31, .025, 1),
           'cream': (.95, .85, .68, 1), 'mint': (.25, .70, .48, 1),
@@ -57,6 +59,61 @@ def character(name, x, bunny=False):
         scarf.rotation_euler.y = .15
     return root, arms
 
+def import_character(entry):
+    before_objects = set(bpy.data.objects)
+    before_actions = set(bpy.data.actions)
+    model = Path(entry['model'])
+    if model.suffix.lower() == '.glb':
+        bpy.ops.import_scene.gltf(filepath=str(model))
+    else:
+        bpy.ops.import_scene.fbx(filepath=str(model))
+    objects = list(set(bpy.data.objects)-before_objects)
+    arm = find_armature(objects)
+    if arm is None:
+        raise ValueError(f"{entry['name']}: imported model has no armature")
+    if sum(obj.type=='ARMATURE' for obj in objects)!=1:
+        raise ValueError('starter import supports exactly one armature per model')
+    actions = list(set(bpy.data.actions)-before_actions)
+    action = next((a for a in actions if a.name == entry['clip']), None)
+    if action is None:
+        action = next((a for a in actions if a.name.rpartition('.')[0] == entry['clip'] and a.name.rpartition('.')[2].isdigit()), None)
+    if action is None:
+        raise ValueError(f"Missing clip {entry['clip']!r}. Imported clips: {[a.name for a in actions]}")
+    for obj in objects:
+        if obj.animation_data:
+            for track in list(obj.animation_data.nla_tracks):
+                obj.animation_data.nla_tracks.remove(track)
+    shift_action_to_frame1(action)
+    bind_action(arm, action)
+    for curve in curves(action):
+        if not any(mod.type=='CYCLES' for mod in curve.modifiers):
+            curve.modifiers.new('CYCLES')
+    # Normalize the model at the first animated frame, keeping imported parenting intact.
+    bpy.context.scene.frame_set(1)
+    bpy.context.view_layer.update()
+    meshes = [obj for obj in objects if obj.type=='MESH']
+    if not meshes:
+        raise ValueError('model contains no mesh')
+    points = [obj.matrix_world @ Vector(corner) for obj in meshes for corner in obj.bound_box]
+    lower = Vector(tuple(min(p[i] for p in points) for i in range(3)))
+    upper = Vector(tuple(max(p[i] for p in points) for i in range(3)))
+    if upper.z-lower.z < .00001:
+        raise ValueError('model has zero height')
+    factor = entry['height']/(upper.z-lower.z)
+    root = bpy.data.objects.new(entry['name']+' placement',None)
+    bpy.context.collection.objects.link(root)
+    for obj in objects:
+        if obj.parent not in objects:
+            matrix = obj.matrix_world.copy()
+            obj.parent=root
+            obj.matrix_world=matrix
+    root.scale=(factor,)*3
+    position=Vector(entry['position'])
+    center=Vector(((lower.x+upper.x)/2,(lower.y+upper.y)/2,lower.z))
+    root.location=position-center*factor
+    return arm, action
+
+
 def build_scene(config):
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
@@ -85,8 +142,15 @@ def build_scene(config):
         for petal in range(5):
             angle = petal * math.tau/5
             ball('petal', (x+.13*math.cos(angle), y, .38+.13*math.sin(angle)), (.10, .07, .10), 'pink' if i%2 else 'white')
-    duck, duck_arms = character('Milo', -.70)
-    bunny, bunny_arms = character('Pip', .70, True)
+    imported = []
+    if config.get('characters'):
+        for entry in config['characters']:
+            imported.append(import_character(entry))
+        duck = bunny = None
+        duck_arms = bunny_arms = []
+    else:
+        duck, duck_arms = character('Milo', -.70)
+        bunny, bunny_arms = character('Pip', .70, True)
     bpy.ops.object.light_add(type='AREA', location=(-3, -4, 7))
     bpy.context.object.data.energy = 850
     bpy.context.object.data.size = 5
@@ -94,7 +158,7 @@ def build_scene(config):
     camera = bpy.context.object
     scene.camera = camera
     camera.data.lens = 44
-    return scene, camera, duck, bunny, duck_arms, bunny_arms
+    return scene, camera, duck, bunny, duck_arms, bunny_arms, imported
 
 def pose(root, arms, action, t, bunny=False):
     root.location.z = 0
@@ -132,7 +196,7 @@ def camera_pose(camera, preset, progress):
 
 def main():
     config = json.loads(Path(sys.argv[sys.argv.index('--')+1]).read_text())
-    scene, camera, duck, bunny, wings, paws = build_scene(config)
+    scene, camera, duck, bunny, wings, paws, imported = build_scene(config)
     directory = Path(config['directory'])
     # Every frame is deterministic: restart can skip intact PNGs.
     for frame in range(1, config['frames']+1):
@@ -148,8 +212,9 @@ def main():
                 pass
         t = (frame-1)/config['fps']
         scene.frame_set(frame)
-        pose(duck, wings, config['action'], t)
-        pose(bunny, paws, config['action'], t, True)
+        if duck is not None:
+            pose(duck, wings, config['action'], t)
+            pose(bunny, paws, config['action'], t, True)
         camera_pose(camera, config['camera'], (frame-1)/max(1, config['frames']-1))
         scene.render.filepath = str(destination)
         bpy.ops.render.render(write_still=True)

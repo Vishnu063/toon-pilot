@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import audio
+import scenes as scene_files
 
 ROOT = Path(__file__).resolve().parent
 ACTIONS = {'waddle', 'hop', 'dance', 'wave'}
@@ -49,8 +50,13 @@ def verify_video(path, seconds, fps, log):
 def fingerprint(plan, song, vocals, preview, soundtrack=None):
     digest = hashlib.sha256()
     digest.update(json.dumps({'plan': plan, 'preview': preview}, sort_keys=True).encode())
-    for path in [ROOT / 'video.py', ROOT / 'audio.py', ROOT / 'blender_scene.py', song] + ([vocals] if vocals else []) + ([soundtrack] if soundtrack else []):
+    for path in [ROOT / 'video.py', ROOT / 'audio.py', ROOT / 'blender_scene.py', ROOT / 'scenes.py', ROOT / 'third_party/anim_studio/rig.py', song] + ([vocals] if vocals else []) + ([soundtrack] if soundtrack else []):
         digest.update(Path(path).read_bytes())
+    for scene in plan.get('scenes', []):
+        for character in scene.get('characters', []):
+            with Path(character['model']).open('rb') as model:
+                for chunk in iter(lambda: model.read(1024*1024), b''):
+                    digest.update(chunk)
     return digest.hexdigest()
 
 def doctor(args):
@@ -76,7 +82,7 @@ def doctor(args):
     return 1 if missing else 0
 
 def create(args):
-    plan = validate_plan(json.loads(Path(args.plan).read_text()))
+    plan = validate_plan(scene_files.load_plan(args.plan))
     song, song_seconds = audio.load_song(args.song)
     total = sum(s['seconds'] for s in plan['scenes'])
     if abs(total - song_seconds) > .05:
@@ -115,6 +121,7 @@ def create(args):
         fps, width, height, samples = (12, 256, 456, 4) if args.preview else (24, 540, 960, 8)
         scenes = [dict(plan['scenes'][0], seconds=min(2, plan['scenes'][0]['seconds']))] if args.preview else plan['scenes']
         durations = [round(s['seconds'] * fps) / fps for s in scenes]
+        caption_count = scene_files.write_captions(scenes, durations, folder / 'captions.srt')
         for index, (scene, seconds) in enumerate(zip(scenes, durations)):
             work = folder / f'scene-{index:02d}'
             work.mkdir(exist_ok=True)
@@ -152,12 +159,18 @@ def create(args):
         run(['ffmpeg', '-y', '-v', 'error', '-f', 'concat', '-safe', '1', '-i', str(folder / 'clips.txt'),
              '-i', str(soundtrack), '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac',
              '-t', str(sum(durations)), '-movflags', '+faststart', str(temporary)], folder / 'assemble.log')
+        if caption_count:
+            captioned = folder / 'captioned.mp4'
+            run(['ffmpeg', '-y', '-v', 'error', '-i', str(temporary), '-i', str(folder / 'captions.srt'),
+                 '-map', '0:v:0', '-map', '0:a:0', '-map', '1:0', '-c', 'copy', '-c:s', 'mov_text',
+                 '-metadata:s:s:0', 'language=eng', '-movflags', '+faststart', str(captioned)], folder / 'captions.log')
+            captioned.replace(temporary)
         verify_video(temporary, sum(durations), fps, folder / 'verify-final.log')
         if not any(s['codec_type'] == 'audio' for s in probe(temporary)['streams']):
             raise ValueError('final video is missing audio')
         temporary.replace(destination)
         manifest.update(status='verified_media_needs_human_review', output=str(destination),
-                        seconds=sum(durations), finished=time.time())
+                        seconds=sum(durations), captions=caption_count, finished=time.time())
         manifest_path.write_text(json.dumps(manifest, indent=2))
         print(f'Created: {destination}\nAudio: {"imported complete song; vocals unverified" if soundtrack_input else "imported vocals" if args.vocals else "instrumental only, no singing"}. Review animation and sound before publishing.')
     except BaseException as exc:
