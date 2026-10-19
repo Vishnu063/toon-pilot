@@ -2,7 +2,7 @@
 
 Free-software building blocks for original animated stories and nursery rhymes.
 
-**Current version: audio preparation starter.** It prepares a singing score and a simple instrumental backing, then mixes vocals you export from OpenUtau. It does not yet generate vocals automatically, animate characters, render video, or upload to YouTube. There is no LLM or autonomous agent in this version.
+**Current version: a scripted audio and video runner.** Prepare a singing score and backing track, import manually exported vocals, then render simple procedural Milo and Pip scenes with Blender and assemble an MP4. It does not generate singing automatically, understand arbitrary story prompts, lip-sync characters, or upload to YouTube. It uses preset actions rather than an LLM.
 
 ## Quick start (no Python packages or paid API)
 
@@ -49,14 +49,14 @@ Keep vocals and backing within one second of each other; the tool rejects larger
 | [OpenUtau](https://github.com/openutau/OpenUtau) | Singing editor and voicebank renderer | UST preparation and manual vocal handoff implemented; app import unverified |
 | [OpenVPI DiffSinger](https://github.com/openvpi/DiffSinger) | Optional neural singing through compatible OpenUtau voicebanks | Not bundled or tested; optional, model-dependent memory requirements |
 | [Your VoiceStudio](https://github.com/Vishnu063/VoiceStudio) | Character speech, narration, and dialogue | Existing separate project; no adapter added yet; not our singing engine |
-| [Blender](https://github.com/blender/blender) | Character animation and camera control | Planned; no video renderer implemented yet |
-| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | Audio conversion and later video assembly | Optional external conversion command above |
+| [Blender](https://github.com/blender/blender) | Character animation and camera control | Procedural starter characters, action/camera presets, sequential CPU rendering |
+| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | Conversion and video assembly | Required for the video runner; optional for audio-only preparation |
 
 OpenUtau is free software. Voicebanks and model weights have separate licenses; inspect their own terms. This starter does not download third-party voices, imitate a real speaker, or bundle third-party assets. Heavy prompt-to-song models such as [ACE-Step](https://github.com/ace-step/ACE-Step-1.5) are deferred until memory requirements are verified; GPU VRAM figures do not establish compatibility with 8 GB system RAM.
 
 ## Your 8 GB computer and EC2
 
-The Python score/backing preparation uses no model or GPU. Generate audio and render animation sequentially when video support is added. OpenUtau performance depends on the voicebank and renderer; 8 GB operation is a target, not a measured guarantee. Use the desktop for the manual singing editor. An EC2 machine without a desktop cannot complete that GUI step using this starter alone. There is no promise of free EC2 compute or unlimited cloud rendering.
+The Python score/backing preparation uses no model or GPU. The video runner generates audio first, then renders scenes sequentially using CPU with two threads by default. It uses no AI video model. OpenUtau performance depends on the voicebank and renderer; 8 GB operation is a target, not a measured guarantee. Use the desktop for the manual singing editor. An EC2 machine without a desktop cannot complete that GUI step using this starter alone. There is no promise of free EC2 compute or unlimited cloud rendering.
 
 ## Change the song
 
@@ -68,4 +68,60 @@ Edit `examples/happy_feet.json`: `bpm`, and each note's `lyric`, MIDI `pitch` (6
 python3 -m unittest discover -s tests -v
 ```
 
-Four local tests cover 32-second output, score fields, invalid tempo/lyric input, WAV format, duration mismatch, silent vocals, peak limiting, and preserving inputs. These tests do not run OpenUtau, a voicebank, VoiceStudio, or Blender. The first acceptance milestone remains an audible exported song followed by a reviewed 32-second animation.
+Seven local tests cover audio validation and mixing, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
+
+
+## Create a video
+
+Install [Blender 4.2 or newer](https://www.blender.org/download/) and [FFmpeg (including ffprobe)](https://ffmpeg.org/download.html). Add their executable folders to PATH, or supply `--blender /full/path/to/blender`. The Python scripts themselves need no extra pip packages. A graphical desktop is not required for Blender's background CPU rendering.
+
+Check tools and optionally inspect your installed voicebank:
+
+```bash
+python3 video.py doctor
+python3 video.py doctor --voicebank /path/to/singer --phonemizer "your singer's required phonemizer"
+```
+
+Doctor detects executables and common voicebank files. It tells you to select the singer's phonemizer and renderer inside OpenUtau. It cannot verify the app's actual selections, pronunciation, model loadability, or voicebank license. Missing Blender/FFmpeg/FFprobe or a supplied bank without recognizable files returns a failure code. No bank is required for an instrumental preview.
+
+Start with a two-second, low-resolution **instrumental** preview:
+
+```bash
+python3 video.py create --preview
+```
+
+Then create the full 32-second video with your prepared vocal WAV:
+
+```bash
+python3 video.py create --vocals vocals.wav
+```
+
+To deliberately render without singing:
+
+```bash
+python3 video.py create --instrumental
+```
+
+The command prints the exact MP4 location inside `output/video/`. Preview uses 256×456 at 12 fps; full output uses 540×960 at 24 fps. Both use simple CPU Cycles rendering with low sample counts. These are lightweight starter visuals, not studio-quality animation; noise and basic geometry are expected. No 8 GB RAM benchmark is claimed. Set `--threads 1` to reduce CPU parallelism; this does not guarantee a particular RAM ceiling.
+
+### Reusable action and camera library
+
+Edit `examples/video.json`. Supported actions are `waddle`, `hop`, `dance`, and `wave`; cameras are `dolly`, `arc`, `pullback`, and `static`. `blender_scene.py` contains reusable functions for these presets and generates simple original duck and bunny geometry. They are not reproductions of an image reference and do not have facial animation or automatic lip sync. The waddle is a simple body translation/bob, not a detailed leg rig.
+
+Each scene may be 0.5–60 seconds, with up to 100 scenes and a total cap of ten minutes. The plan duration must match your song score. Longer video rendering and memory use have not been benchmarked. The first scene supplies the short preview; other scenes are tested by a full render.
+
+### Resume after interruption
+
+Run the same command with identical inputs. Jobs use a fingerprint of the plan, score, vocals, runner, audio code, and scene code. Completed clips are checked by FFprobe and fully decoded with FFmpeg before reuse. Existing valid frame images can be reused when a scene is unfinished. Clips are processed one at a time; no parallel model or scene workers are launched.
+
+The output directory contains `status.json` and per-scene `render.log`, `encode.log`, and `verify.log`. A completed job reports `verified_media_needs_human_review`: file checks cannot judge animation quality or whether the singing sounds good. Ctrl+C or a normal failure releases the job lock; after a hard kill, remove only that job's `.running` file once you confirm no render remains active. Two processes cannot intentionally write the same job concurrently.
+
+If frame decoding fails repeatedly, delete the affected generated PNG and retry. If a finished clip fails validation, it is encoded again. Changed inputs use a new job directory. Blender/tool upgrades are not in the fingerprint: use a fresh `--out` directory after upgrading them.
+
+
+### Validation performed for this update
+
+- Seven automated tests passed locally, including real FFmpeg encoding/assembly/decoding with fixture frames and a failed job followed by resume and clip reuse.
+- Blender 4.2.0 rendered an actual two-second, 24-frame CPU preview with the included characters. FFprobe and full video decoding passed; a rendered frame was visually inspected.
+- Each of the four action/camera pairs rendered two small smoke-test frames in real Blender.
+- No full 32-second render, actual English voicebank singing, target-machine 8 GB memory benchmark, or end-to-end sung video has been completed. The two-second preview contains instrumental backing only.
