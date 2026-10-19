@@ -1,0 +1,9 @@
+{
+  "title": "Milo and Pip: Happy Feet",
+  "scenes": [
+    {"seconds": 8, "action": "waddle", "camera": "dolly"},
+    {"seconds": 8, "action": "hop", "camera": "arc"},
+    {"seconds": 8, "action": "dance", "camera": "static"},
+    {"seconds": 8, "action": "wave", "camera": "pullback"}
+  ]
+}
