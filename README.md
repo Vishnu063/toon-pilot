@@ -1,5 +1,14 @@
 # Toon Pilot
 
+## Start the rhyme dashboard
+
+```bash
+git pull
+python3 dashboard.py
+```
+
+Open **http://127.0.0.1:8768** locally, or use the [EC2 SSH tunnel instructions](docs/dashboard.md). Enter lyrics, song length, tempo, music direction and scene timing; save projects; generate or upload a song; listen, preview and download. The dashboard reuses our existing pipeline without extra Python packages. ACE-Step must be installed and started separately for singing. Stop it before rendering. Speech narration and ElevenLabs-level audio quality are not provided or verified by this UI.
+
 Free-software building blocks for original animated stories and nursery rhymes.
 
 **Current version: a scripted audio and video runner.** Prepare a singing score and backing track, import manually exported vocals, then render simple procedural Milo and Pip scenes with Blender and assemble an MP4. An optional local ACE-Step adapter can request complete songs from lyrics and style prompts; actual model inference is not validated yet. The core runner does not understand arbitrary story prompts, lip-sync characters, or upload to YouTube. It uses preset actions rather than an LLM.
@@ -69,7 +78,7 @@ Edit `examples/happy_feet.json`: `bpm`, and each note's `lyric`, MIDI `pitch` (6
 python3 -m unittest discover -s tests -v
 ```
 
-Nineteen local tests cover audio validation and mixing, installer/launcher control flow with fixture commands, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not install ACE-Step dependencies or run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
+Twenty-five local tests cover dashboard input, job failures, uploads/media access and fixture audio-engine integration; audio validation and mixing; installer/launcher control flow with fixture commands; invalid plans; cache fingerprints; actual FFmpeg encoding/assembly/decoding with synthetic fixture frames; an interrupted render; and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not install ACE-Step dependencies or run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
 
 
 ## Create a video
