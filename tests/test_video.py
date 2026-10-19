@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 import video
@@ -64,6 +65,18 @@ for i in range(1,config['frames']+1):
                 video.create(args)
                 self.assertTrue(json.loads(statuses[0].read_text())['scenes'][0]['reused'])
                 self.assertEqual(list((root/'output').rglob('attempts'))[0].read_text(),'2')
+                stereo=root/'stereo.wav'
+                backing=list((root/'output').rglob('backing.wav'))[0]
+                subprocess.run(['ffmpeg','-v','error','-i',str(backing),'-ac','2','-ar','48000',str(stereo)],check=True)
+                args.soundtrack=str(stereo)
+                with self.assertRaises(RuntimeError): video.create(args)
+                video.create(args)
+                status=next(json.loads(p.read_text()) for p in (root/'output').rglob('status.json') if json.loads(p.read_text()).get('soundtrack'))
+                streams=video.probe(status['output'])['streams']
+                audio_stream=next(s for s in streams if s['codec_type']=='audio')
+                self.assertEqual(audio_stream['channels'],2)
+                self.assertEqual(audio_stream['sample_rate'],'48000')
+
 
 if __name__ == '__main__':
     unittest.main()
