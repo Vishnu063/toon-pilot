@@ -18,6 +18,32 @@ Sources checked:
 
 ## Install the server separately
 
+### Ubuntu/Linux x86_64 EC2: install now, test later
+
+From the Toon Pilot checkout:
+
+```bash
+git pull
+bash scripts/install-music.sh --check
+bash scripts/install-music.sh --download-models
+```
+
+The installer needs Git, curl, Python 3, FFmpeg and FFprobe already installed. It installs `uv` from its official installer if missing, uses uv-managed Python 3.12 (independent of Ubuntu's system Python), and runs upstream `uv sync --locked --no-dev`. ACE-Step source is pinned to `ca1e85fe9430179831e6bc6be790c332190a3866`; an existing checkout with tracked edits or a different origin is refused. Your system Python environment is not used for ACE-Step dependencies.
+
+The preflight requires **25 GiB free disk** on the installation filesystem. This is a conservative starting check, not a guaranteed upper bound: upstream Linux packages include CUDA wheels even for CPU use, and caches may be on another filesystem. Core model downloads are about 10 GB in addition to software and caches. No disk resizing, swap, GPU driver, service, firewall, or paid API setup is performed.
+
+The default installation is `~/.local/share/toon-pilot/ACE-Step-1.5`, outside this repository. To use a different existing disk, set an absolute `TOON_MUSIC_DIR` for both install and start commands. Omit `--download-models` for software only. Repeat the same command after a failed download; the upstream downloader manages its cache. Its main bundle includes the 1.7B language-model files, although our CPU launcher disables loading that extra model. We reuse the supported bundle rather than claim a minimal CPU-only dependency/model download.
+
+The installer **does not load models, start the server, or generate a song**. Successful setup does not establish singing quality or 8 GB RAM compatibility. Start the foreground server later:
+
+```bash
+bash scripts/start-music.sh
+```
+
+The launcher uses the installed virtual environment directly, binds to `127.0.0.1:8001`, forces CPU, disables the extra LM and flash attention, and uses one queue worker and two CPU threads. Starting it may download any missing models. Use another EC2 terminal for `python3 song.py`, then Ctrl+C the server before rendering with Blender. No background service is created.
+
+### Manual setup / other platforms
+
 ACE-Step currently documents stable Python 3.11–3.12 and about 10 GB disk for core models, plus environment/download overhead. Do not reuse VoiceStudio's Python environment. Install `uv` through its [official instructions](https://docs.astral.sh/uv/getting-started/installation/) and Git, then on Linux/macOS:
 
 ```bash
@@ -92,4 +118,7 @@ Do not run Blender and the ACE-Step server simultaneously on an 8 GB machine. Af
 
 ## Validation boundary
 
+Installer validation includes Bash syntax checks, a real read-only disk/tool preflight, and four fixture-command tests: installation/download without server startup, CPU launcher settings, dependency failure without a completion marker, dirty source/low disk refusal, and read-only preflight behavior. These are control-flow tests, not a real upstream package/model installation. Installation on EC2 and actual inference are deferred until you run them.
+
 Automated adapter tests use a local HTTP fixture server and synthetic WAV audio, not model-generated singing. They cover low-memory request flags, timeout/resume without duplicate submission, failed jobs, corrupt downloads, caching, and refusal of remote URLs. Real FFmpeg validates and decodes the fixture audio. The video integration test additionally checks an imported stereo 48 kHz soundtrack survives assembly. No claim of CoComelon-like quality is made without listening evidence.
+

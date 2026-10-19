@@ -69,7 +69,7 @@ Edit `examples/happy_feet.json`: `bpm`, and each note's `lyric`, MIDI `pitch` (6
 python3 -m unittest discover -s tests -v
 ```
 
-Fifteen local tests cover audio validation and mixing, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
+Nineteen local tests cover audio validation and mixing, installer/launcher control flow with fixture commands, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not install ACE-Step dependencies or run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
 
 
 ## Create a video
@@ -141,6 +141,14 @@ If frame decoding fails repeatedly, delete the affected generated PNG and retry.
 ## Optional AI singing and music with ACE-Step
 
 See **[ACE-Step setup and usage](docs/ace-step.md)** for Linux/macOS and Windows instructions. Install its server in a separate environment, force CPU operation and disable its extra language model for the first experiment. No paid API is used. **8 GB RAM operation and reference-level singing quality remain unverified.**
+
+On Ubuntu/Linux x86_64 EC2, install now and test later:
+
+```bash
+bash scripts/install-music.sh --download-models
+```
+
+This checks for 25 GiB free disk, installs pinned upstream software in `~/.local/share/toon-pilot/ACE-Step-1.5`, and downloads its main model bundle. It does **not** start a server or generate audio. The standard upstream Linux environment includes large CUDA dependencies even though our launcher uses CPU. Use `--check` for a read-only preflight, or omit `--download-models` to install software only. Later, run `bash scripts/start-music.sh` before using `song.py`. Installation on your EC2 and singing inference still need verification.
 
 Once the local server is running:
 
