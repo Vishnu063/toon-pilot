@@ -118,7 +118,7 @@ def create(args):
             soundtrack = folder / 'song.wav'
         if soundtrack_input:
             soundtrack = Path(soundtrack_input).resolve()
-        fps, width, height, samples = (12, 256, 456, 4) if args.preview else (24, 540, 960, 8)
+        fps, width, height, samples = (12, 256, 456, 32) if args.preview else (24, 540, 960, 64)
         scenes = [dict(plan['scenes'][0], seconds=min(2, plan['scenes'][0]['seconds']))] if args.preview else plan['scenes']
         durations = [round(s['seconds'] * fps) / fps for s in scenes]
         caption_count = scene_files.write_captions(scenes, durations, folder / 'captions.srt')
@@ -213,3 +213,4 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+

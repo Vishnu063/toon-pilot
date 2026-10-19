@@ -23,7 +23,13 @@ def ball(name, location, scale, color, parent=None):
     material = bpy.data.materials.get(color)
     if material is None:
         material = bpy.data.materials.new(color)
-        material.diffuse_color = COLORS[color]
+    # diffuse_color alone is a viewport setting on newer Blender versions.
+    # Always set the actual surface shader used by Cycles as well.
+    material.diffuse_color = COLORS[color]
+    material.use_nodes = True
+    surface = material.node_tree.nodes.get('Principled BSDF')
+    surface.inputs['Base Color'].default_value = COLORS[color]
+    surface.inputs['Roughness'].default_value = .65
     obj.data.materials.append(material)
     for face in obj.data.polygons:
         face.use_smooth = True
@@ -122,6 +128,10 @@ def build_scene(config):
     scene.cycles.device = 'CPU'
     scene.cycles.samples = config['samples']
     scene.cycles.use_denoising = True
+    scene.cycles.denoiser = 'OPENIMAGEDENOISE'
+    scene.cycles.use_adaptive_sampling = True
+    scene.cycles.adaptive_threshold = .03
+    scene.view_layers[0].cycles.use_denoising = True
     scene.render.threads_mode = 'FIXED'
     scene.render.threads = config['threads']
     scene.render.resolution_x = config['width']
@@ -134,6 +144,9 @@ def build_scene(config):
     background.inputs['Color'].default_value = (.60, .78, .95, 1)
     background.inputs['Strength'].default_value = .6
     scene.view_settings.view_transform = 'Standard'
+    scene.view_settings.look = 'None'
+    scene.view_settings.exposure = 0
+    scene.view_settings.gamma = 1
     COLORS['grass'] = (.43, .72, .35, 1)
     ball('garden ground', (0, 0, -.22), (200, 200, .25), 'grass')
     for i in range(14):
@@ -154,6 +167,7 @@ def build_scene(config):
     bpy.ops.object.light_add(type='AREA', location=(-3, -4, 7))
     bpy.context.object.data.energy = 850
     bpy.context.object.data.size = 5
+    bpy.context.object.rotation_euler = (Vector((0, 0, 1))-bpy.context.object.location).to_track_quat('-Z', 'Y').to_euler()
     bpy.ops.object.camera_add(location=(0, -9, 3.5))
     camera = bpy.context.object
     scene.camera = camera
@@ -221,3 +235,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

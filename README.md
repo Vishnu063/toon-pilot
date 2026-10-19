@@ -91,6 +91,16 @@ Start with a two-second, low-resolution **instrumental** preview:
 python3 video.py create --preview
 ```
 
+Procedural characters use explicit Principled surface shaders so their colors render in Cycles, rather than relying on viewport-only colors. Preview frames use 32 samples and full frames use 64, with OpenImageDenoise enabled for the scene and view layer. These settings reduce grain but take longer on CPU. After updating, rerun the preview command: the code fingerprint creates a fresh output folder without reusing older white/grainy frames.
+
+For a real Blender color/denoising regression check (separate from the regular Python tests):
+
+```bash
+blender --background --factory-startup --python-exit-code 1 --python tests/blender_render_smoke.py
+```
+
+This renders `output/render-smoke/frame.png` and checks shader colors, denoising settings, and visible yellow/blue/green pixels. The fix was checked in Blender 4.2.0; rerender on your EC2 to verify your installed Blender version. The included models remain simple procedural starter characters.
+
 Then create the full 32-second video with your prepared vocal WAV:
 
 ```bash
@@ -161,3 +171,4 @@ python3 video.py create --plan examples/happy_feet.scene.yaml --preview
 ```
 
 The included YAML works with our procedural characters. Your own licensed, self-contained GLB/FBX with one armature and embedded animation can replace them through `cast` and per-scene `characters`; see [the scene guide](docs/scenes.md). Separate motion-file retargeting and automatic lip sync are not implemented. Imported asset memory use depends on mesh/texture size. Captions are selectable, not burned in, and their text/timing must be reviewed against the actual song.
+
