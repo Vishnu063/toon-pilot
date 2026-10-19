@@ -2,7 +2,7 @@
 
 Free-software building blocks for original animated stories and nursery rhymes.
 
-**Current version: a scripted audio and video runner.** Prepare a singing score and backing track, import manually exported vocals, then render simple procedural Milo and Pip scenes with Blender and assemble an MP4. It does not generate singing automatically, understand arbitrary story prompts, lip-sync characters, or upload to YouTube. It uses preset actions rather than an LLM.
+**Current version: a scripted audio and video runner.** Prepare a singing score and backing track, import manually exported vocals, then render simple procedural Milo and Pip scenes with Blender and assemble an MP4. An optional local ACE-Step adapter can request complete songs from lyrics and style prompts; actual model inference is not validated yet. The core runner does not understand arbitrary story prompts, lip-sync characters, or upload to YouTube. It uses preset actions rather than an LLM.
 
 ## Quick start (no Python packages or paid API)
 
@@ -46,13 +46,14 @@ Keep vocals and backing within one second of each other; the tool rejects larger
 
 | Project | Role | Integration status |
 |---|---|---|
+| [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) | Complete songs with singing and music | Optional local HTTP adapter; real model inference not yet tested |
 | [OpenUtau](https://github.com/openutau/OpenUtau) | Singing editor and voicebank renderer | UST preparation and manual vocal handoff implemented; app import unverified |
 | [OpenVPI DiffSinger](https://github.com/openvpi/DiffSinger) | Optional neural singing through compatible OpenUtau voicebanks | Not bundled or tested; optional, model-dependent memory requirements |
 | [Your VoiceStudio](https://github.com/Vishnu063/VoiceStudio) | Character speech, narration, and dialogue | Existing separate project; no adapter added yet; not our singing engine |
 | [Blender](https://github.com/blender/blender) | Character animation and camera control | Procedural starter characters, action/camera presets, sequential CPU rendering |
 | [FFmpeg](https://github.com/FFmpeg/FFmpeg) | Conversion and video assembly | Required for the video runner; optional for audio-only preparation |
 
-OpenUtau is free software. Voicebanks and model weights have separate licenses; inspect their own terms. This starter does not download third-party voices, imitate a real speaker, or bundle third-party assets. Heavy prompt-to-song models such as [ACE-Step](https://github.com/ace-step/ACE-Step-1.5) are deferred until memory requirements are verified; GPU VRAM figures do not establish compatibility with 8 GB system RAM.
+OpenUtau is free software. Voicebanks and model weights have separate licenses; inspect their own terms. This starter does not download third-party voices, imitate a real speaker, or bundle third-party assets. An optional [ACE-Step integration](docs/ace-step.md) is now available for experimental local song generation. Its adapter is tested with HTTP fixtures; actual model inference and 8 GB system RAM compatibility are unverified. GPU VRAM figures do not establish compatibility with 8 GB system RAM.
 
 ## Your 8 GB computer and EC2
 
@@ -68,7 +69,7 @@ Edit `examples/happy_feet.json`: `bpm`, and each note's `lyric`, MIDI `pitch` (6
 python3 -m unittest discover -s tests -v
 ```
 
-Seven local tests cover audio validation and mixing, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
+Eleven local tests cover audio validation and mixing, invalid plans, cache fingerprints, actual FFmpeg encoding/assembly/decoding with synthetic fixture frames, an interrupted render, and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
 
 
 ## Create a video
@@ -82,7 +83,7 @@ python3 video.py doctor
 python3 video.py doctor --voicebank /path/to/singer --phonemizer "your singer's required phonemizer"
 ```
 
-Doctor detects executables and common voicebank files. It tells you to select the singer's phonemizer and renderer inside OpenUtau. It cannot verify the app's actual selections, pronunciation, model loadability, or voicebank license. Missing Blender/FFmpeg/FFprobe or a supplied bank without recognizable files returns a failure code. No bank is required for an instrumental preview.
+Doctor detects executables and common voicebank files. It tells you to select the singer's phonemizer and renderer inside OpenUtau. It cannot verify the app's actual selections, pronunciation, model loadability, or voicebank license. Missing Blender/FFmpeg/FFprobe or a supplied bank without recognizable files returns a failure code. No bank is required for an instrumental preview or an imported complete soundtrack from ACE-Step.
 
 Start with a two-second, low-resolution **instrumental** preview:
 
@@ -112,7 +113,7 @@ Each scene may be 0.5–60 seconds, with up to 100 scenes and a total cap of ten
 
 ### Resume after interruption
 
-Run the same command with identical inputs. Jobs use a fingerprint of the plan, score, vocals, runner, audio code, and scene code. Completed clips are checked by FFprobe and fully decoded with FFmpeg before reuse. Existing valid frame images can be reused when a scene is unfinished. Clips are processed one at a time; no parallel model or scene workers are launched.
+Run the same command with identical inputs. Jobs use a fingerprint of the plan, score, vocals or complete soundtrack, runner, audio code, and scene code. Completed clips are checked by FFprobe and fully decoded with FFmpeg before reuse. Existing valid frame images can be reused when a scene is unfinished. Clips are processed one at a time; no parallel model or scene workers are launched.
 
 The output directory contains `status.json` and per-scene `render.log`, `encode.log`, and `verify.log`. A completed job reports `verified_media_needs_human_review`: file checks cannot judge animation quality or whether the singing sounds good. Ctrl+C or a normal failure releases the job lock; after a hard kill, remove only that job's `.running` file once you confirm no render remains active. Two processes cannot intentionally write the same job concurrently.
 
@@ -121,7 +122,30 @@ If frame decoding fails repeatedly, delete the affected generated PNG and retry.
 
 ### Validation performed for this update
 
-- Seven automated tests passed locally, including real FFmpeg encoding/assembly/decoding with fixture frames and a failed job followed by resume and clip reuse.
+- Eleven automated tests passed locally, including real FFmpeg encoding/assembly/decoding with fixture frames and a failed job followed by resume and clip reuse.
 - Blender 4.2.0 rendered an actual two-second, 24-frame CPU preview with the included characters. FFprobe and full video decoding passed; a rendered frame was visually inspected.
 - Each of the four action/camera pairs rendered two small smoke-test frames in real Blender.
 - No full 32-second render, actual English voicebank singing, target-machine 8 GB memory benchmark, or end-to-end sung video has been completed. The two-second preview contains instrumental backing only.
+
+
+## Optional AI singing and music with ACE-Step
+
+See **[ACE-Step setup and usage](docs/ace-step.md)** for Linux/macOS and Windows instructions. Install its server in a separate environment, force CPU operation and disable its extra language model for the first experiment. No paid API is used. **8 GB RAM operation and reference-level singing quality remain unverified.**
+
+Once the local server is running:
+
+```bash
+python3 song.py
+```
+
+This requests a 10-second test song. After listening to it, request the 32-second example and use the complete song in your video:
+
+```bash
+python3 song.py --request examples/ace_happy_feet.json --out output/music/happy_feet.wav
+python3 video.py create --preview --soundtrack output/music/happy_feet.wav
+python3 video.py create --soundtrack output/music/happy_feet.wav
+```
+
+Stop the ACE-Step server after generating audio, before starting Blender on an 8 GB machine. `--soundtrack` bypasses vocal mixing and preserves stereo audio; `--vocals` remains for isolated mono vocals from OpenUtau. No automatic lyric-to-action alignment is provided.
+
+The adapter saves a task ID and resumes polling on repeat runs, checks server failures, downloads only from the selected loopback server, and validates audio decoding/duration before saving a completed output. Client timeouts do not cancel server work. The tests used a local fixture server and synthetic audio, not a singing model. An imported stereo 48 kHz soundtrack was tested through real FFmpeg assembly. No actual ACE-Step song has been generated or listened to in this workspace.
