@@ -1,19 +1,84 @@
 # Toon Pilot
 
-## Start the rhyme dashboard
+Free-software tools for original nursery songs and simple 3D videos. Use the dashboard to enter lyrics, set song and scene timings, generate or upload audio, listen, and download videos.
+
+## Start here: dashboard on EC2
+
+### 1. EC2 terminal — start the dashboard
+
+For your existing clone:
 
 ```bash
+cd ~/toon-pilot
 git pull
+python3 video.py doctor
 python3 dashboard.py
 ```
 
-Open **http://127.0.0.1:8768** locally, or use the [EC2 SSH tunnel instructions](docs/dashboard.md). Enter lyrics, song length, tempo, music direction and scene timing; save projects; generate or upload a song; listen, preview and download. The dashboard reuses our existing pipeline without extra Python packages. ACE-Step must be installed and started separately for singing. Stop it before rendering. Speech narration and ElevenLabs-level audio quality are not provided or verified by this UI.
+Leave this terminal running. The dashboard prints `http://127.0.0.1:8768`.
 
-Free-software building blocks for original animated stories and nursery rhymes.
+If tools are missing on Ubuntu, install them first:
 
-**Current version: a scripted audio and video runner.** Prepare a singing score and backing track, import manually exported vocals, then render simple procedural Milo and Pip scenes with Blender and assemble an MP4. An optional local ACE-Step adapter can request complete songs from lyrics and style prompts; actual model inference is not validated yet. The core runner does not understand arbitrary story prompts, lip-sync characters, or upload to YouTube. It uses preset actions rather than an LLM.
+```bash
+sudo apt update
+sudo apt install -y python3 git curl ffmpeg blender
+```
 
-## Quick start (no Python packages or paid API)
+Rendering needs Blender **4.2 or newer**; check `blender --version`. See [video setup](#create-a-video) if your packaged version is older. The dashboard itself needs no extra Python packages.
+
+### 2. Mac terminal — connect to the dashboard
+
+Run this **on your Mac**, replacing the key path and public IP:
+
+```bash
+ssh -i /full/path/to/your-key.pem -N -L 8768:127.0.0.1:8768 ubuntu@YOUR_EC2_PUBLIC_IP
+```
+
+Use the full path to the same key you use for EC2 SSH. Keep this terminal open, then open **http://127.0.0.1:8768** in your Mac browser. Do not use the EC2 public IP as the dashboard URL. No extra EC2 security-group port is needed; this uses your existing SSH connection.
+
+Running on your own Linux/Mac computer instead? Run `python3 dashboard.py` in the checkout and open the local URL directly, without a tunnel.
+
+### 3. Browser — create your rhyme
+
+1. Enter the project name, English lyrics, song length (10–120 seconds), tempo and music direction.
+2. Open **Scene timing & camera movement**. Set each scene's duration, movement, camera and optional caption. Scene durations must add up to the song length; **Split time evenly** helps.
+3. Click **Save rhyme & timing**.
+4. Upload your own complete song, or set up AI singing below and click **Generate song**.
+5. Listen to the audio. Before rendering, stop ACE-Step in its terminal with Ctrl+C and tick the dashboard's confirmation.
+6. Click **Create preview** for a two-second check, then **Create full video** when satisfied. Download audio and videos directly from the dashboard.
+
+A preview without a song uses simple instrumental backing. A full video requires a generated or uploaded song. Saved projects remain in `output/dashboard/`; editing and saving creates a new project to preserve earlier audio.
+
+## Optional: install singing now, test later
+
+Run in **another EC2 terminal**, inside the checkout:
+
+```bash
+cd ~/toon-pilot
+bash scripts/install-music.sh --check
+bash scripts/install-music.sh --download-models
+```
+
+The installer is for Linux x86_64. It requires **25 GiB free disk**, installs pinned ACE-Step software and downloads its main model bundle. It does **not** start the server or generate a song. Upstream Linux dependencies include large CUDA packages even though our launcher runs on CPU.
+
+When ready to try singing, run in that EC2 terminal:
+
+```bash
+cd ~/toon-pilot
+bash scripts/start-music.sh
+```
+
+Leave the audio server running while using **Generate song** in the dashboard. Stop it with Ctrl+C before creating videos on your 8 GB machine. The dashboard stays running in its own terminal.
+
+**What is verified:** 25 automated tests, dashboard form/HTTP checks, and a real two-second Blender preview using uploaded synthetic audio. **Still pending:** actual ACE-Step installation/inference on your EC2, singing quality, an 8 GB memory benchmark, and visual dashboard review in a real browser. Voice direction is a prompt, not voice cloning. Exact word-level lyric alignment, spoken narration and automatic YouTube publishing are not implemented. ElevenLabs-level audio quality is not established.
+
+More details: [dashboard and recovery guide](docs/dashboard.md) · [ACE-Step music guide](docs/ace-step.md).
+
+## Command-line tools
+
+The existing runner prepares singing scores, accepts exported vocals or complete songs, renders procedural Milo/Pip characters with preset actions/cameras, and assembles MP4 files. It does not interpret arbitrary story prompts or provide automatic lip sync. The sections below are optional alternatives to the dashboard.
+
+### Prepare a score and instrumental backing
 
 Install Python 3.11+ and Git, then run:
 
