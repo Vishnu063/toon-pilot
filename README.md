@@ -143,7 +143,7 @@ Edit `examples/happy_feet.json`: `bpm`, and each note's `lyric`, MIDI `pitch` (6
 python3 -m unittest discover -s tests -v
 ```
 
-Twenty-five local tests cover dashboard input, job failures, uploads/media access and fixture audio-engine integration; audio validation and mixing; installer/launcher control flow with fixture commands; invalid plans; cache fingerprints; actual FFmpeg encoding/assembly/decoding with synthetic fixture frames; an interrupted render; and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not install ACE-Step dependencies or run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
+Thirty local tests cover dashboard input, job failures, uploads/media access and fixture audio-engine integration; audio validation and mixing; installer/launcher control flow with fixture commands; invalid plans; cache fingerprints; actual FFmpeg encoding/assembly/decoding with synthetic fixture frames; an interrupted render; and reuse of completed clips. The fixture renderer is not Blender and does not validate visual quality. These tests do not install ACE-Step dependencies or run OpenUtau, a voicebank, or VoiceStudio. Actual singing still requires a separate audible trial.
 
 
 ## Create a video
@@ -254,3 +254,24 @@ python3 video.py create --plan examples/happy_feet.scene.yaml --preview
 
 The included YAML works with our procedural characters. Your own licensed, self-contained GLB/FBX with one armature and embedded animation can replace them through `cast` and per-scene `characters`; see [the scene guide](docs/scenes.md). Separate motion-file retargeting and automatic lip sync are not implemented. Imported asset memory use depends on mesh/texture size. Captions are selectable, not burned in, and their text/timing must be reviewed against the actual song.
 
+
+## Optional ArcReel storyboard handoff
+
+[ArcReel](https://github.com/ArcReel/ArcReel) is a separate self-hosted video workspace. Install and start it using its upstream README; it is not bundled with Toon Pilot. Its model services need their own credentials and may cost money. This integration does not provide free unlimited videos.
+
+With ArcReel running, obtain a bearer access token from its `/api/v1/auth/token` endpoint using your ArcReel credentials. Keep that token private; it is different from any local dashboard token. In the terminal that launches Rhyme Studio:
+
+```bash
+export ARCREEL_URL=http://127.0.0.1:1241
+read -r -s -p 'ArcReel bearer token: ' ARCREEL_TOKEN; echo
+export ARCREEL_TOKEN
+python3 dashboard.py
+```
+
+For a remote instance use HTTPS, with a trusted certificate. URLs must be origins without paths, queries or embedded credentials. Plain HTTP is accepted only for loopback. No additional Python packages are required. Without a token, the existing studio works as before and the optional send button is disabled.
+
+Save a rhyme, then choose **Send brief to ArcReel**. This creates a separate storyboard project named `toon-<local-project-id>` and uploads the original lyrics, music direction and scene timing/action/camera/captions as `source/novel.txt`. It sends no audio or video. Open your ArcReel workspace to review the brief and continue there. The adapter sets `generate_overview=false` and `narration_delivery=post_production`; sending does not request model inference, TTS or video generation. Singing, character consistency and lip sync are not guaranteed. ArcReel output is not automatically imported, rendered by Blender or uploaded to YouTube.
+
+The receipt lives at `output/dashboard/<project-id>/arcreel.json` (or your custom `--out` directory). A successful repeat returns the saved receipt without overwriting ArcReel edits. An incomplete/uncertain attempt blocks resubmission, including after restart. Inspect the named project and its source in ArcReel, and finish the transfer manually if needed; do not blindly delete the receipt and resend. The receipt records the attempt phase, never the token. The original local rendering workflow is unchanged.
+
+The adapter is checked against ArcReel source revision `43bc1575f1cf60318769476a04d219ab7233dc42` and tested with a local HTTP contract fixture, including a lost upload response, refused authentication, redirects and repeat protection. A live ArcReel installation and actual provider generation have not been tested here.

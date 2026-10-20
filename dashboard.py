@@ -16,6 +16,7 @@ import threading
 import urllib.parse
 import uuid
 
+import arcreel
 import song
 import video
 
@@ -132,7 +133,23 @@ class Studio:
                     state['render'] = json.loads(max(manifests, key=lambda p: p.stat().st_mtime).read_text()).get('scenes', [])
                 except (OSError, ValueError):
                     pass
-        return dict(id=identifier, project=data, state=state, media=media)
+        return dict(id=identifier, project=data, state=state, media=media, arcreel=json.loads((folder/'arcreel.json').read_text()) if (folder/'arcreel.json').exists() else None)
+
+    def send_arcreel(self, identifier):
+        folder = self.folder(identifier)
+        self.reserve(identifier)
+        try:
+            data = json.loads((folder/'project.json').read_text())
+            brief = ('TOON PILOT — ORIGINAL SONG AND SCENE BRIEF\n'
+                     'Preserve the supplied lyrics and scene timing. Milo is a yellow duck; '
+                     'Pip is a bunny. Both appear together. This is a brief, not a generated script. '
+                     'Singing, lip sync and character matching require separate review.\n\n'
+                     + json.dumps(data, ensure_ascii=False, indent=2))
+            return arcreel.Client().send(folder/'arcreel.json', 'toon-'+identifier,
+                                        data['title'], brief, aspect='16:9',
+                                        style='Colourful 3D nursery animation')
+        finally:
+            self.release()
 
     def list_projects(self):
         return [dict(id=p.parent.name, title=json.loads(p.read_text())['title'])
@@ -284,6 +301,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, studio.list_projects())
             elif path.startswith('/api/projects/'):
                 self.reply(200, studio.detail(path.rsplit('/', 1)[-1]))
+            elif path == '/api/arcreel':
+                self.reply(200, arcreel.Client().status())
             elif path == '/api/tools':
                 self.reply(200, dict(blender=bool(shutil.which(studio.blender)), ffmpeg=bool(shutil.which('ffmpeg')), ffprobe=bool(shutil.which('ffprobe'))))
             elif path.startswith('/media/'):
@@ -344,6 +363,8 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(length))
             if path == '/api/projects':
                 self.reply(201, studio.create(data))
+            elif re.fullmatch(r'/api/projects/[a-f0-9]{32}/arcreel', path):
+                self.reply(200, studio.send_arcreel(path.split('/')[3]))
             elif re.fullmatch(r'/api/projects/[a-f0-9]{32}/run', path):
                 identifier = path.split('/')[3]
                 if not isinstance(data, dict):
