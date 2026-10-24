@@ -1,0 +1,4 @@
+# Optional, only for explicit YouTube OAuth and private uploads.
+google-api-python-client>=2.160,<3
+google-auth-oauthlib>=1.2,<2
+PySocks>=1.7,<2

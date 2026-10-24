@@ -124,14 +124,23 @@ def build_scene(config):
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
     scene = bpy.context.scene
-    scene.render.engine = 'CYCLES'
-    scene.cycles.device = 'CPU'
-    scene.cycles.samples = config['samples']
-    scene.cycles.use_denoising = True
-    scene.cycles.denoiser = 'OPENIMAGEDENOISE'
-    scene.cycles.use_adaptive_sampling = True
-    scene.cycles.adaptive_threshold = .03
-    scene.view_layers[0].cycles.use_denoising = True
+    engine = config.get('engine', 'cycles')
+    if engine not in ('cycles', 'eevee'):
+        raise ValueError('Unknown render engine')
+    scene.render.engine = 'CYCLES' if engine == 'cycles' else 'BLENDER_EEVEE_NEXT'
+    if engine == 'cycles':
+        scene.cycles.device = 'CPU'
+        scene.cycles.samples = config['samples']
+        denoise = config.get('denoise', True)
+        scene.cycles.use_denoising = denoise
+        if denoise:
+            try:
+                scene.cycles.denoiser = 'OPENIMAGEDENOISE'
+            except TypeError as exc:
+                raise ValueError('This Blender build lacks OpenImageDenoise. Use Lite mode explicitly or install an official Blender build for Quality mode.') from exc
+        scene.cycles.use_adaptive_sampling = True
+        scene.cycles.adaptive_threshold = .03
+        scene.view_layers[0].cycles.use_denoising = denoise
     scene.render.threads_mode = 'FIXED'
     scene.render.threads = config['threads']
     scene.render.resolution_x = config['width']
@@ -162,8 +171,9 @@ def build_scene(config):
         duck = bunny = None
         duck_arms = bunny_arms = []
     else:
-        duck, duck_arms = character('Milo', -.70)
-        bunny, bunny_arms = character('Pip', .70, True)
+        members = config.get('original_characters', ['milo', 'pip'])
+        duck, duck_arms = character('Milo', -.70 if len(members) == 2 else 0) if 'milo' in members else (None, [])
+        bunny, bunny_arms = character('Pip', .70 if len(members) == 2 else 0, True) if 'pip' in members else (None, [])
     bpy.ops.object.light_add(type='AREA', location=(-3, -4, 7))
     bpy.context.object.data.energy = 850
     bpy.context.object.data.size = 5
@@ -181,8 +191,9 @@ def pose(root, arms, action, t, bunny=False):
     for arm in arms:
         arm.rotation_euler = (0, 0, 0)
     cycle = math.tau * t
-    if action == 'waddle':
-        root.location.y = -.15 * t
+    if action in ('waddle', 'walk', 'run'):
+        cycle *= 2 if action == 'run' else 1
+        root.location.y = -.25 * math.sin(t*.6)
         root.rotation_euler.y = .11 * math.sin(cycle*1.5)
         root.location.z = .04 * abs(math.sin(cycle*1.5))
     elif action == 'hop':
@@ -194,6 +205,11 @@ def pose(root, arms, action, t, bunny=False):
             arm.rotation_euler.y = side * (.4 + .25*math.sin(cycle))
     elif action == 'wave':
         arms[1].rotation_euler.y = -1.0 + .3*math.sin(cycle*1.5)
+    elif action in ('talk', 'sing', 'idle'):
+        # Deliberately a body gesture, not phoneme-driven facial animation.
+        root.location.z = .015 * math.sin(cycle*.5)
+        if action != 'idle':
+            arms[1].rotation_euler.y = -.25 + .15*math.sin(cycle)
 
 def camera_pose(camera, preset, progress):
     smooth = progress*progress*(3-2*progress)
@@ -228,6 +244,7 @@ def main():
         scene.frame_set(frame)
         if duck is not None:
             pose(duck, wings, config['action'], t)
+        if bunny is not None:
             pose(bunny, paws, config['action'], t, True)
         camera_pose(camera, config['camera'], (frame-1)/max(1, config['frames']-1))
         scene.render.filepath = str(destination)

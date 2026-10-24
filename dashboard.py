@@ -19,6 +19,9 @@ import uuid
 import arcreel
 import song
 import video
+import characters
+import narration
+import planner
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 64 * 1024 * 1024
@@ -60,11 +63,27 @@ def validate_project(data):
         seconds = row.get('seconds')
         if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds*2 != round(seconds*2):
             raise ValueError('Use half-second steps for scene timings.')
-        scenes.append(dict(seconds=seconds, action=row.get('action'), camera=row.get('camera'), caption=caption))
+        extra = {key: row[key] for key in ('original_characters', 'dialogue', 'speaker', 'background', 'expression', 'transition') if key in row}
+        if 'dialogue' in extra and (not isinstance(extra['dialogue'], str) or len(extra['dialogue']) > 1000):
+            raise ValueError('Dialogue must be text up to 1000 characters.')
+        scenes.append(dict(seconds=seconds, action=row.get('action'), camera=row.get('camera'), caption=caption, **extra))
     video.validate_plan({'scenes': scenes})
     if abs(sum(row['seconds'] for row in scenes)-duration) > .001:
         raise ValueError('Scene durations must add up to the song duration.')
-    return dict(result, duration=duration, bpm=bpm, scenes=scenes)
+    language = data.get('language', 'en')
+    orientation = data.get('orientation', 'portrait')
+    mode = data.get('mode', 'legacy')
+    if language not in ('en', 'hi') or orientation not in ('portrait', 'landscape') or mode not in ('lite', 'quality', 'legacy'):
+        raise ValueError('Invalid language, orientation or render mode.')
+    voice = data.get('narrator', language+'-boy')
+    if not isinstance(voice, str) or voice not in narration.VOICES or narration.VOICES[voice]['language'] != language:
+        raise ValueError('Choose a narration voice matching the language.')
+    members = data.get('characters', ['milo', 'pip'])
+    characters.select(members)
+    for row in scenes:
+        row.setdefault('original_characters', members)
+    return dict(result, duration=duration, bpm=bpm, scenes=scenes, language=language, orientation=orientation,
+                mode=mode, narrator=voice, characters=members)
 
 
 class BusyError(ValueError):
@@ -103,7 +122,11 @@ class Studio:
         folder.mkdir()
         save_json(folder/'project.json', data)
         save_json(folder/'request.json', dict(prompt=data['prompt'], lyrics=data['lyrics'], audio_duration=data['duration'], bpm=data['bpm']))
-        save_json(folder/'plan.json', dict(title=data['title'], scenes=data['scenes']))
+        plan = dict(title=data['title'], language=data['language'], orientation=data['orientation'], scenes=data['scenes'])
+        words = data['lyrics'].split()
+        for i, scene in enumerate(plan['scenes']):
+            scene.setdefault('dialogue', ' '.join(words[i*len(words)//len(plan['scenes']):(i+1)*len(words)//len(plan['scenes'])]))
+        save_json(folder/'plan.json', plan)
         # A rest-only timing score satisfies the existing runner's timeline check.
         # The complete uploaded/generated soundtrack supplies the actual music.
         save_json(folder/'score.json', dict(bpm=60, notes=[dict(lyric='R', pitch=60, ticks=round(data['duration']*480))]))
@@ -133,7 +156,9 @@ class Studio:
                     state['render'] = json.loads(max(manifests, key=lambda p: p.stat().st_mtime).read_text()).get('scenes', [])
                 except (OSError, ValueError):
                     pass
-        return dict(id=identifier, project=data, state=state, media=media, arcreel=json.loads((folder/'arcreel.json').read_text()) if (folder/'arcreel.json').exists() else None)
+        return dict(id=identifier, project=data, state=state, media=media,
+                    youtube=json.loads((folder/'youtube.json').read_text()) if (folder/'youtube.json').exists() else None,
+                    arcreel=json.loads((folder/'arcreel.json').read_text()) if (folder/'arcreel.json').exists() else None)
 
     def send_arcreel(self, identifier):
         folder = self.folder(identifier)
@@ -167,11 +192,11 @@ class Studio:
 
     def start(self, identifier, action, server_stopped=False):
         folder = self.folder(identifier)
-        if action not in ('song', 'preview', 'full'):
+        if action not in ('song', 'narration', 'preview', 'full', 'youtube'):
             raise ValueError('Unknown action.')
-        if action != 'song' and not server_stopped:
+        if action in ('preview', 'full') and not server_stopped:
             raise ValueError('Stop the ACE-Step server first, then confirm it is stopped before rendering.')
-        if action != 'song':
+        if action in ('preview', 'full'):
             try:
                 parts = urllib.parse.urlsplit(self.music_url)
                 connection = socket.create_connection((parts.hostname, parts.port or 80), timeout=.3)
@@ -182,9 +207,15 @@ class Studio:
                 raise ValueError('The audio server port is still active. Stop ACE-Step before rendering.')
         if action == 'full' and not (folder/'song.wav').exists():
             raise ValueError('Generate or upload a song before creating the full video.')
+        if action == 'narration' and ((folder/'song.wav').exists() or (folder/'song.wav.job.json').exists()):
+            raise ValueError('Audio already exists. Save a new project to create narration.')
+        if action == 'youtube' and not (folder/'video.mp4').exists():
+            raise ValueError('Create and review a full video before uploading privately.')
         self.reserve(identifier)
         try:
-            save_json(folder/'state.json', dict(status='running', action=action, message='Waiting for the audio engine…' if action == 'song' else 'Rendering on CPU…'))
+            message = {'song':'Waiting for the audio engine…', 'narration':'Creating offline spoken narration…',
+                       'youtube':'Uploading privately to YouTube…'}.get(action,'Rendering on CPU…')
+            save_json(folder/'state.json', dict(status='running', action=action, message=message))
             self.worker = threading.Thread(target=self.run, args=(identifier, action), daemon=True)
             self.worker.start()
         except BaseException:
@@ -194,13 +225,22 @@ class Studio:
     def run(self, identifier, action):
         folder = self.folder(identifier)
         try:
+            project = json.loads((folder/'project.json').read_text())
             if action == 'song':
                 if (folder/'song.wav').exists() and not (folder/'song.wav.job.json').exists():
                     raise ValueError('This project already has uploaded audio. Save a new project to generate an alternative.')
                 command = [sys.executable, '-u', str(ROOT/'song.py'), '--request', str(folder/'request.json'), '--out', str(folder/'song.wav'), '--url', self.music_url]
+            elif action == 'narration':
+                command = [sys.executable, '-u', str(ROOT/'narration.py'), '--plan', str(folder/'plan.json'),
+                           '--out', str(folder/'song.wav'), '--voice', project.get('narrator', 'en-boy')]
+            elif action == 'youtube':
+                command = [sys.executable, '-u', str(ROOT/'youtube_upload.py'), 'upload', '--video', str(folder/'video.mp4'),
+                    '--receipt', str(folder/'youtube.json'), '--token', str(ROOT/'output/private/youtube-token.json'),
+                    '--title', project['title'], '--description', project['lyrics'].encode('utf-8')[:4500].decode('utf-8',errors='ignore')]
             else:
                 command = [sys.executable, '-u', str(ROOT/'video.py'), 'create', '--plan', str(folder/'plan.json'),
-                           '--song', str(folder/'score.json'), '--out', str(folder/'render'), '--blender', self.blender]
+                           '--song', str(folder/'score.json'), '--out', str(folder/'render'), '--blender', self.blender,
+                           '--mode', project.get('mode', 'legacy'), '--orientation', project.get('orientation', 'portrait')]
                 if action == 'preview':
                     command.append('--preview')
                 command += ['--soundtrack', str(folder/'song.wav')] if (folder/'song.wav').exists() else ['--instrumental']
@@ -212,17 +252,20 @@ class Studio:
                 code = self.process.wait()
             if code:
                 raise RuntimeError(f'Job stopped (exit {code}). See the details below. Retry uses the same saved job; a client timeout does not cancel generation on ACE-Step.')
-            if action != 'song':
+            if action in ('preview', 'full'):
                 candidates = list((folder/'render'/('preview' if action == 'preview' else 'full')).rglob('preview.mp4' if action == 'preview' else 'video.mp4'))
                 if not candidates:
                     raise ValueError('Renderer completed without an output video.')
                 temporary = folder/'video-copy.tmp'
                 shutil.copyfile(max(candidates, key=lambda p: p.stat().st_mtime), temporary)
                 temporary.replace(folder/('preview.mp4' if action == 'preview' else 'video.mp4'))
-            elif not (folder/'song.wav').exists():
+            elif action in ('song', 'narration') and not (folder/'song.wav').exists():
                 raise ValueError('Audio engine completed without an audio file.')
             save_json(folder/'state.json', dict(status='needs_review', action=action,
-                message='File checks passed. Listen and review lyrics, timing and quality before using.' if action == 'song' else 'Video created. Review movement, camera and audio before publishing.'))
+                message='Private YouTube upload completed; see youtube.json for its ID.' if action == 'youtube' else
+                    'Spoken narration created, not singing. Listen for pronunciation and timing.' if action == 'narration' else
+                    'File checks passed. Listen and review lyrics, timing and quality before using.' if action == 'song' else
+                    'Video created. Review movement, camera and audio before publishing.'))
         except Exception as exc:
             save_json(folder/'state.json', dict(status='failed', action=action, message=str(exc)))
         finally:
@@ -305,6 +348,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, arcreel.Client().status())
             elif path == '/api/tools':
                 self.reply(200, dict(blender=bool(shutil.which(studio.blender)), ffmpeg=bool(shutil.which('ffmpeg')), ffprobe=bool(shutil.which('ffprobe'))))
+            elif path == '/api/production':
+                import production
+                queue = production.Queue(studio.root/'queue')
+                try:
+                    self.reply(200, dict(jobs=queue.rows(), speech=bool(shutil.which('espeak-ng')),
+                        youtube=(ROOT/'output/private/youtube-token.json').is_file()))
+                finally:
+                    queue.close()
             elif path.startswith('/media/'):
                 _, _, identifier, name = path.split('/')
                 if name not in {'song.wav', 'preview.mp4', 'video.mp4'}:
@@ -361,8 +412,13 @@ class Handler(BaseHTTPRequestHandler):
             if length > 64000:
                 raise ValueError('Project request is too large.')
             data = json.loads(self.rfile.read(length))
+            if not isinstance(data, dict):
+                raise ValueError('Request must be an object.')
             if path == '/api/projects':
                 self.reply(201, studio.create(data))
+            elif path == '/api/plan':
+                self.reply(200, planner.plan(data.get('title'), data.get('lyrics'), data.get('duration',30),
+                    data.get('language','en'), data.get('characters'), data.get('orientation','portrait')))
             elif re.fullmatch(r'/api/projects/[a-f0-9]{32}/arcreel', path):
                 self.reply(200, studio.send_arcreel(path.split('/')[3]))
             elif re.fullmatch(r'/api/projects/[a-f0-9]{32}/run', path):

@@ -1,0 +1,13 @@
+{
+  "title": "Milo and Pip share a sunny day",
+  "text": "Milo waves hello in the sunny garden. Pip hops over to share a little game. Together they dance, then wave goodbye to their friends.",
+  "duration": 30,
+  "language": "en",
+  "characters": ["milo", "pip"],
+  "voice": "en-boy",
+  "orientation": "portrait",
+  "mode": "lite",
+  "width": 180,
+  "height": 320,
+  "fps": 6
+}

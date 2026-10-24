@@ -12,6 +12,7 @@ import video
 class VideoTests(unittest.TestCase):
     def test_plan_rejects_unknown_actions_and_invalid_lengths(self):
         for scene in [dict(seconds=0, action='dance', camera='arc'),
+                      dict(seconds=8, action=[], camera='arc'),
                       dict(seconds=8, action='fly', camera='arc'),
                       dict(seconds=float('nan'), action='dance', camera='arc')]:
             with self.assertRaises(ValueError):

@@ -2,6 +2,58 @@
 
 Free-software tools for original nursery songs and simple 3D videos. Use the dashboard to enter lyrics, set song and scene timings, generate or upload audio, listen, and download videos.
 
+## Automated offline production
+
+The existing pipeline now also supports deterministic story/scene planning,
+versioned Milo/Pip character selection, offline English/Hindi spoken narration,
+portrait/landscape Lite and Quality presets, a persistent retryable queue,
+thumbnails and an opt-in private YouTube uploader. **Spoken narration is not
+singing.** Natural singing still uses the separate optional engines below.
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-scenes.txt
+# Install espeak-ng, Blender 4.2+, FFmpeg and FFprobe with your OS package manager.
+# This Debian 13 amd64 cloud has a tested rootless speech installer:
+bash scripts/install-speech.sh
+export PATH=/workspace/tools/bin:$PATH
+.venv/bin/python production.py enqueue --request examples/production-small.json
+.venv/bin/python production.py worker
+.venv/bin/python production.py list
+```
+
+For the dashboard, run `.venv/bin/python dashboard.py`, choose language,
+characters and format, **Plan scenes automatically**, save, and **Create spoken
+narration**. Preview first, then render the full video. Lite is explicitly noisy
+but works without OpenImageDenoise; Quality needs a compatible Blender build and
+its 1080p rendering speed is unmeasured. Existing manual timing, YAML/rigged
+assets, audio uploads, ACE-Step and ArcReel features remain available.
+
+```mermaid
+flowchart LR
+  Input[Dashboard or original script] --> Plan[Offline story and scene templates]
+  Plan --> Queue[Persistent job queue]
+  Queue --> Audio[Offline narration or approved vocals]
+  Queue --> Blender[Existing Blender renderer and character library]
+  Audio --> Edit[FFmpeg assembly and validation]
+  Blender --> Edit
+  Edit --> Review[MP4, captions, thumbnail and review]
+  Review --> Upload[Optional OAuth private YouTube upload]
+```
+
+A real 30-second low-resolution narrated sample passed full media decoding;
+the latest 180×320/6-fps run took 2:22 with ~276 MiB maximum process/child RSS.
+This is not a 1080p or 8 GB EC2 benchmark. The characters remain clearly labeled
+starter geometry. YouTube is fixture-tested; live upload needs your OAuth
+connection and quota. No GPU model is installed, no public publishing is exposed,
+and no recurring scheduler or automatic upload is enabled by default.
+
+See the **[automation guide](docs/automation.md)** for setup, character versions,
+daily scheduling, recovery, YouTube OAuth, resource measurements, test evidence
+and limitations; **[feature audit](docs/feature-inventory.md)** records the baseline.
+
+![Genuine Lite sample frame](docs/assets/production-small.jpg)
+
 ## Start here: dashboard on EC2
 
 ### 1. EC2 terminal — start the dashboard
